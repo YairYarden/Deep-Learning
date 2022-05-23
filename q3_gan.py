@@ -230,4 +230,21 @@ def train_disc_net(gen_net, disc_net, real_data_gen, disc_opt, use_gradient_pena
             disc_cost = disc_out_real - disc_out_fake
         disc_opt.step()
 
-        return disc_net,
+    return gen_net, disc_net, disc_opt
+
+
+def train_gen_net(gen_net, disc_net, gen_opt):
+    gen_net.zero_grad()
+
+    noise = torch.randn(BATCH_SIZE, NOISE_SIZE)
+    if torch.cuda.is_available():
+        noise = noise.to(DEVICE)
+    noise_var = autograd.Variable(noise)
+    gen_out = gen_net(noise_var)
+    net_out = disc_net(gen_out)
+    net_out = net_out.mean()
+    net_out.backward(torch.FloatTensor([-1].to(DEVICE)))
+    gen_loss = -net_out
+    gen_opt.step()
+    return gen_net, disc_net, gen_opt
+
