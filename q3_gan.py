@@ -11,7 +11,8 @@ Original file is located at
 
 # Commented out IPython magic to ensure Python compatibility.
 import numpy as np
-from datetime import datetime 
+from datetime import datetime
+import time
 import os
 
 import torch
@@ -147,18 +148,18 @@ class Discriminator(nn.Module):
 def calc_gradient_penalty(disc_net, real_data, fake_data):
     alpha = torch.rand(BATCH_SIZE, 1)
     alpha = alpha.expand(real_data.size())
-    alpha = alpha.to(DEVICE) if torch.cuda.is_available() else alpha
+    alpha = alpha.to(DEVICE) if is_gpu_available else alpha
 
     interpolates = alpha * real_data + ((1 - alpha) * fake_data)
 
-    if torch.cuda.is_available():
+    if is_gpu_available:
         interpolates = interpolates.to(DEVICE)
     interpolates = autograd.Variable(interpolates, requires_grad=True)
 
     disc_interpolates = disc_net(interpolates)
 
     gradients = autograd.grad(outputs=disc_interpolates, inputs=interpolates,
-                              grad_outputs=torch.ones(disc_interpolates.size()).to(DEVICE) if torch.cuda.is_available()
+                              grad_outputs=torch.ones(disc_interpolates.size()).to(DEVICE) if is_gpu_available
                               else torch.ones(disc_interpolates.size()),
                               create_graph=True, retain_graph=True, only_inputs=True)[0]
 
@@ -168,7 +169,7 @@ def calc_gradient_penalty(disc_net, real_data, fake_data):
 
 def generate_fake_image(gen_net):
     noise = torch.randn(BATCH_SIZE, NOISE_SIZE)
-    if torch.cuda.is_available():
+    if is_gpu_available:
         noise = noise.to(DEVICE)
     noise_var = autograd.Variable(noise, volatile=True)
     fake_images = gen_net(noise_var)
@@ -191,9 +192,13 @@ def data_generator(data, batch_size):
         yield (np.copy(image_batches[i]), np.copy(label_batches[i]))
 
 
+def images_train_gen(data_gen):
+    while True:
+        for images, labels in data_gen():
+            yield images
+
+
 def train_disc_net(gen_net, disc_net, real_data_gen, disc_opt, use_gradient_penalty=True):
-    for p in disc_net.parameters():  # reset requires_grad
-        p.requires_grad = True
 
     for disc_iter in range(DISC_ITER):
 
@@ -225,9 +230,9 @@ def train_disc_net(gen_net, disc_net, real_data_gen, disc_opt, use_gradient_pena
         if use_gradient_penalty:
             gradient_penalty = calc_gradient_penalty(disc_net, real_data_var.data, fake_images.data)
             gradient_penalty.backward()
-            disc_cost = disc_out_fake - disc_out_real + gradient_penalty
+            disc_loss = disc_out_fake - disc_out_real + gradient_penalty
         else:
-            disc_cost = disc_out_real - disc_out_fake
+            disc_loss = disc_out_real - disc_out_fake
         disc_opt.step()
 
     return gen_net, disc_net, disc_opt
@@ -248,3 +253,20 @@ def train_gen_net(gen_net, disc_net, gen_opt):
     gen_opt.step()
     return gen_net, disc_net, gen_opt
 
+
+def train_loop(gen_net, disc_net, gen_opt, disc_opt, train_gen, dev_gen, use_gradient_penalty):
+    data_gen = images_train_gen(train_gen)
+
+    for iteration in range(GEN_ITER):
+        start_time = time.time()
+
+        for p in disc_net.parameters():  # reset requires_grad
+            p.requires_grad = True
+
+        gen_net, disc_net, disc_opt = train_disc_net(gen_net, disc_net, data_gen, disc_opt,
+                                                     use_gradient_penalty=use_gradient_penalty)
+
+        for p in disc_net.parameters():  # reset requires_grad
+            p.requires_grad = False
+
+        gen_net, disc_net, gen_opt = train_gen_net(gen_net, disc_net, gen_opt)
