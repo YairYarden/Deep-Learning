@@ -271,3 +271,18 @@ def train_loop(gen_net, disc_net, gen_opt, disc_opt, train_gen, dev_gen, use_gra
             p.requires_grad = False
 
         gen_net, disc_net, gen_opt = train_gen_net(gen_net, disc_net, gen_opt)
+
+        if iteration % PRINT_EVERY == (PRINT_EVERY - 1):
+            dev_disc_losses = []
+            for dev_images, _ in dev_gen():
+                dev_images = torch.Tensor(dev_images)
+
+                if is_gpu_available:
+                    dev_images = dev_images.to(DEVICE)
+                dev_images_var = autograd.Variable(dev_images, volatile=True)
+
+                disc_out = disc_net(dev_images_var)
+                dev_disc_loss = -disc_out.mean().cpu().data.numpy()
+                dev_disc_losses.append(dev_disc_loss)
+            image = generate_fake_image(gen_net)
+
