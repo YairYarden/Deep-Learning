@@ -185,6 +185,7 @@ def shuffle_data(images, labels):
 
 def data_generator(data, batch_size):
     images, labels = data
+    images, labels = shuffle_data(images, labels)
     image_batches = images.reshape(-1, batch_size, OUTPUT_TOT_SIZE)
     label_batches = labels.reshape(-1, batch_size)
 
